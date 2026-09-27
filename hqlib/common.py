@@ -14,7 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover - bin/hq re-execs with a newer p
     tomllib = None
 
 HQ_HOME = Path(os.environ.get("HQ_HOME") or Path(__file__).resolve().parent.parent)
-CONFIG_PATH = HQ_HOME / "hq.toml"
+CONFIG_PATH = Path(os.environ.get("HQ_CONFIG") or HQ_HOME / "hq.toml")
 PROTOCOL_DIR = HQ_HOME / "protocol"
 TASTE_DIR = HQ_HOME / "taste"
 BRIEFS_DIR = HQ_HOME / "briefs"

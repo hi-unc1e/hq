@@ -519,6 +519,93 @@ class BriefSync(unittest.TestCase):
                 brief.BRIEFS_DIR = olddir
 
 
+class TuiPty(unittest.TestCase):
+    """hq todo -i 在伪终端里跑真实 curses：按键驱动，验证可见输出与写回。"""
+
+    def _run(self, cwd, keys, env_extra=None):
+        import os
+        import pty
+        import select
+        import subprocess
+        import sys as _sys
+        import time
+
+        master, slave = pty.openpty()
+        repo = Path(__file__).resolve().parents[1]
+        env = dict(os.environ, TERM="xterm-256color", PYTHONPATH=str(repo))
+        env.update(env_extra or {})
+        # 硬保险：没显式给 HQ_CONFIG 的 pty 用例禁止跑（防止按键写进真实项目）
+        assert "HQ_CONFIG" in env, "pty 测试必须用 HQ_CONFIG 隔离，避免真实写回"
+        proc = subprocess.Popen(
+            [_sys.executable, "-m", "hqlib", "todo", "-i"],
+            cwd=cwd, stdin=slave, stdout=slave, stderr=slave, env=env)
+        os.close(slave)
+        out = b""
+        deadline = time.time() + 25
+        ki = 0
+        while time.time() < deadline:
+            r, _, _ = select.select([master], [], [], 0.4)
+            if r:
+                try:
+                    chunk = os.read(master, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                out += chunk
+            else:
+                if ki < len(keys) and (ki > 0 or out):
+                    # 首键必须等到首屏真的画出来（curses 初始化完成）再发，
+                    # 否则可能被吞；后续键在 0.5s 静默后发。
+                    time.sleep(0.5 if ki == 0 else 0.0)
+                    os.write(master, keys[ki])
+                    ki += 1
+                elif ki >= len(keys) and proc.poll() is not None:
+                    break
+        try:
+            os.close(master)
+        except OSError:
+            pass
+        rc = proc.wait(timeout=10)
+        return rc, out
+
+    def test_quit_cleanly(self):
+        import tempfile as _tf
+
+        with _tf.TemporaryDirectory() as d:
+            cfg = Path(d) / "hq.toml"
+            cfg.write_text("", encoding="utf-8")  # 空登记表：隔离守卫 + 零真实读取
+            rc, out = self._run(d, [b"q"], env_extra={"HQ_CONFIG": str(cfg)})
+            self.assertEqual(rc, 0)
+            self.assertIn("待你判断".encode(), out)  # 列表标题画出来了
+
+    def test_decide_flow_writes_back(self):
+        import tempfile as _tf
+
+        from hqlib import answer, brief, common
+        with _tf.TemporaryDirectory() as d:
+            d = Path(d)
+            aaa = d / "aaa"; aaa.mkdir()
+            (aaa / "STATUS.md").write_text(
+                STATUS.replace("project: demo", "project: aaa"), encoding="utf-8")
+            cfg = d / "hq.toml"
+            cfg.write_text(f'[[projects]]\npath = "{aaa}"\n', encoding="utf-8")
+            old, oldcwd = common.CONFIG_PATH, Path.cwd()
+            common.CONFIG_PATH = cfg
+            try:
+                # 子进程同样指向临时配置（ENV 隔离，绝不触真实项目）
+                os.environ["HQ_CONFIG"] = str(cfg)
+                # 进 aaa 目录 → Enter 详情 → y 同意 → q 退出
+                rc, out = self._run(aaa, [b"\n", b"y", b"q"])
+                self.assertEqual(rc, 0)
+                states = {r[0]: r[1] for r in answer.todo()}
+                self.assertEqual(states["aaa#1"], "已通过")
+            finally:
+                os.environ.pop("HQ_CONFIG", None)
+                common.CONFIG_PATH = old
+                os.chdir(oldcwd)
+
+
 class ItemDetail(unittest.TestCase):
     def test_detail_renders_labels_and_note(self):
         import os

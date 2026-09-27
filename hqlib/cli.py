@@ -156,6 +156,14 @@ def cmd_scheduled(args) -> int:
 
 def cmd_todo(args) -> int:
     from . import answer
+    # -i = 交互式看板（curses）：列表选择 → 详情 → 即答。
+    if getattr(args, "interactive", False):
+        from .tui import run_tui
+
+        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+            print("hq todo -i 需要交互式终端（stdout/stdin 都要在 tty 上）。")
+            return 2
+        return run_tui(scope=None if args.all else answer.current_project())
     # 带编号 = 详情视图：看这一条的 怎么验/预期/建议 全文（短编号可用）。
     if getattr(args, "item", None):
         print(answer.render_detail(answer.item_detail(_expand_id(args.item))))
@@ -248,9 +256,9 @@ def _grouped_help(p, sub):
         # 子命令条目区：{…} 行之后到 "options:" 之前；条目 = 4 空格缩进行，续行更深
         # 条目区 = "positional arguments:" 下的 {…} 行到 "options:" 之间
         # （usage 里也有一行 {…}，必须定位段落头，否则会把 description 裁掉）
-        pa = next(i for i, l in enumerate(lines) if l.strip() == "positional arguments:")
+        pa = next(i for i, ln in enumerate(lines) if ln.strip() == "positional arguments:")
         start = next(i for i in range(pa, len(lines)) if lines[i].lstrip().startswith("{"))
-        end = next(i for i, l in enumerate(lines) if l.strip() == "options:")
+        end = next(i for i, ln in enumerate(lines) if ln.strip() == "options:")
         entries, cur = [], None
         for line in lines[start + 1:end]:
             if line.startswith("    ") and not line.startswith("        "):
@@ -262,10 +270,10 @@ def _grouped_help(p, sub):
         for entry in entries:
             name = entry[0].strip().split()[0]
             by_name[name] = entry
-        ordered = ([f"  ── 人工（你手敲） ──"]
-                   + [l for n in _HUMAN_CMDS for l in by_name[n]]
-                   + [f"  ── 机器 / agent 侧（hook、定时、skill 用；你不用敲） ──"]
-                   + [l for n in _MACHINE_CMDS for l in by_name[n]])
+        ordered = (["  ── 人工（你手敲） ──"]
+                   + [ln for n in _HUMAN_CMDS for ln in by_name[n]]
+                   + ["  ── 机器 / agent 侧（hook、定时、skill 用；你不用敲） ──"]
+                   + [ln for n in _MACHINE_CMDS for ln in by_name[n]])
         return "\n".join(lines[:start + 1] + ordered + lines[end:])
 
     import functools
@@ -293,8 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser(
         "todo",
-        help="列出待你判断的 ❓（默认只看当前目录所在项目）；hq todo 3 看该条详情")
+        help="列出待你判断的 ❓（默认只看当前目录所在项目）；hq todo 3 看详情，-i 进交互看板")
     s.add_argument("item", nargs="?", help="编号（3 / #3 / 项目#3）：显示该条全文详情")
+    s.add_argument("-i", "--interactive", action="store_true",
+                   help="交互式看板：上下选择、Enter 看详情并当场答复")
     s.add_argument("-a", "--all", action="store_true",
                    help="全部项目，且含已答复条目")
     s.set_defaults(func=cmd_todo)

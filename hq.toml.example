@@ -1,0 +1,9 @@
+# hq 配置：登记你要看盘的项目（绝对路径）。
+# 复制为仓库根目录的 hq.toml —— 它是你的个人实例数据，已被 .gitignore 排除。
+wip_limit = 3   # 同时 active 的主线上限，超过会在简报里提醒
+
+[[projects]]
+path = "/absolute/path/to/your/project-a"
+
+[[projects]]
+path = "/absolute/path/to/your/project-b"

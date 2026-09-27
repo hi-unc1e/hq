@@ -1,0 +1,19 @@
+#!/bin/sh
+# hq CLI。需要 Python 3.11+（tomllib）；hook/定时任务的 PATH 里 python3 可能是系统旧版，这里挑一个够新的。
+# 解析软链接再定位仓库根：允许 ln -s 到 PATH 目录（如 ~/bin/hq）。
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in /*) SELF="$LINK" ;; *) SELF="$(dirname "$SELF")/$LINK" ;; esac
+done
+HQ_HOME="$(cd "$(dirname "$SELF")/.." && pwd -P)"
+for py in "$HQ_PYTHON" /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+  [ -n "$py" ] || continue
+  if "$py" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    PYTHONPATH="$HQ_HOME${PYTHONPATH:+:$PYTHONPATH}" exec "$py" -m hqlib "$@"
+  fi
+done
+echo "hq: 需要 Python 3.11+" >&2
+# gate 模式下必须输出合法 JSON，否则 Codex/Claude 会报 invalid stop hook output
+[ "$1" = "gate" ] && printf '{}'
+exit 0

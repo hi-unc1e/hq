@@ -1,0 +1,13 @@
+#!/bin/sh
+# 纯度闸：暂存内容里出现个人标记即拦截提交。
+# 模式串用拼接构造，避免脚本自身字面量触发自己。
+U="dp""du"
+MARKERS="$U|/Users/$U|duc""kee|mac""EDR|yuque_""diary|copy_""pentest|Auto_""JB|tokei-""projects\.png"
+ADDED=$(git diff --cached --diff-filter=AM -U0 | grep '^+' | grep -v '^+++' | grep -En "$MARKERS")
+if [ -n "$ADDED" ]; then
+  echo "✗ [hygiene] 暂存内容含个人标记，提交被拦：" >&2
+  echo "$ADDED" | head -5 >&2
+  echo "换成虚构数据（demo / /Users/demo）再提交。" >&2
+  exit 1
+fi
+exit 0

@@ -1,0 +1,26 @@
+name: Windows regression
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit tests
+        run: python -m unittest discover -s tests -p test_windows.py
+      - name: Windows launcher help
+        shell: cmd
+        run: bin\hq.cmd --help
+      - name: Windows launcher gate is JSON
+        shell: pwsh
+        run: |
+          $payload = '{"cwd":"' + (Get-Location).Path.Replace('\','/') + '"}'
+          $out = $payload | cmd /c bin\hq.cmd gate
+          if ($LASTEXITCODE -ne 0) { throw "hq.cmd exited $LASTEXITCODE" }
+          $out | ConvertFrom-Json | Out-Null

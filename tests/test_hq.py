@@ -161,6 +161,13 @@ class Fingerprint(ProjectCase):
 
 
 class Verify(ProjectCase):
+    def test_shell_command_selects_windows_command_processor(self):
+        from hqlib.verify import shell_command
+        argv, kwargs = shell_command("echo hello", platform="nt")
+        self.assertEqual(argv[-4:], ["/d", "/s", "/c", "echo hello"])
+        self.assertIn("creationflags", kwargs)
+        self.assertNotIn("start_new_session", kwargs)
+
     def test_full_run_records_results_and_status_block(self):
         res = run_verify(self.root, "full", quiet=True)
         self.assertFalse(res["ok"])

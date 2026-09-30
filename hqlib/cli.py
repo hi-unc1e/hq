@@ -82,8 +82,21 @@ def _open_in_viewer(path) -> bool:
     """Typora（有则用，无则系统默认 app）。成功 True。"""
     import subprocess
 
+    if sys.platform == "win32":
+        try:
+            os.startfile(str(path))  # type: ignore[attr-defined]
+            return True
+        except (OSError, AttributeError):
+            return False
+
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
+
     for target in ("-a", "Typora"), ():
-        cmd = ["open", *target, str(path)] if target else ["open", str(path)]
+        # Typora selection is macOS-specific; Linux falls back directly to
+        # the desktop's default Markdown viewer.
+        if target and sys.platform != "darwin":
+            continue
+        cmd = [opener, *target, str(path)] if target else [opener, str(path)]
         try:
             subprocess.run(cmd, check=True, timeout=15)
             return True

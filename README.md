@@ -137,6 +137,22 @@ ln -s "$PWD/bin/hq" ~/bin/hq # 或任何 PATH 目录；需要 Python 3.11+
 hq doctor                    # 自检
 ```
 
+### ZCode / Agent Skills
+
+仓库内置标准 Agent Skills 布局。ZCode 用户可以直接用 `skills` CLI 安装
+`henry-hq` skill，不需要手工复制提示词：
+
+```console
+npx skills add hi-unc1e/hq --skill henry-hq --agent zcode -g -y
+```
+
+`hq` 命令本身仍需放进 PATH。Windows 使用仓库里的 `bin\\hq.cmd`（PowerShell
+可调用 `bin\\hq.ps1`）；Python CLI 要求 Python 3.11+。Windows 的验收命令由
+`cmd.exe` 执行，macOS/Linux 使用本机 POSIX shell。
+
+仓库的 `Windows regression` workflow 会在 `windows-latest` 上跑单测、启动脚本
+和 `hq gate` JSON 输出，避免 Windows 兼容性只停留在静态检查。
+
 把 `hq gate` 配置为 Claude Code / Codex 的 Stop hook（`hq init` 会自动装），
 闸门即生效。完整协议见 `protocol/PROTOCOL.md`。
 

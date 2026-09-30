@@ -32,6 +32,16 @@ def _tail(text: str, n: int = TAIL_LINES) -> str:
     return "\n".join(lines[-n:])
 
 
+def shell_command(command: str, platform: str | None = None) -> tuple[list[str], dict]:
+    """Return the native shell command and process-group options."""
+    platform = platform or os.name
+    if platform == "nt":
+        return ([os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command],
+                {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)})
+    shell = "/bin/zsh" if Path("/bin/zsh").exists() else "/bin/sh"
+    return [shell, "-lc", command], {"start_new_session": True}
+
+
 def run_check(root: Path, check: dict) -> dict:
     logs = state_dir(root) / "logs"
     logs.mkdir(exist_ok=True)
@@ -41,15 +51,22 @@ def run_check(root: Path, check: dict) -> dict:
     with open(log_path, "wb") as fh:
         fh.write(f"$ {check['cmd']}\n".encode())
         fh.flush()
-        proc = subprocess.Popen(["/bin/zsh", "-lc", check["cmd"]], cwd=root, stdout=fh,
+        # zsh is convenient on macOS, but it is not present on Windows.  Keep
+        # checks as shell snippets (the ACCEPTANCE format is intentionally
+        # simple) and select the native command processor at runtime.
+        argv, kwargs = shell_command(check["cmd"])
+        proc = subprocess.Popen(argv, cwd=root, stdout=fh,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                start_new_session=True)
+                                **kwargs)
         try:
             code = proc.wait(timeout=check["timeout"])
         except subprocess.TimeoutExpired:
             timed_out = True
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                if os.name == "nt":
+                    proc.kill()
+                else:
+                    os.killpg(proc.pid, signal.SIGKILL)
             except OSError:
                 pass
             code = proc.wait()

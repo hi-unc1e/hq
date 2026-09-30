@@ -7,7 +7,7 @@ while [ -L "$SELF" ]; do
   case "$LINK" in /*) SELF="$LINK" ;; *) SELF="$(dirname "$SELF")/$LINK" ;; esac
 done
 HQ_HOME="$(cd "$(dirname "$SELF")/.." && pwd -P)"
-for py in "$HQ_PYTHON" /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+for py in "$HQ_PYTHON" /opt/homebrew/bin/python3 /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 /opt/homebrew/bin/python3.11 /usr/local/bin/python3 /usr/local/bin/python3.13 /usr/local/bin/python3.12 /usr/local/bin/python3.11 python3; do
   [ -n "$py" ] || continue
   if "$py" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
     PYTHONPATH="$HQ_HOME${PYTHONPATH:+:$PYTHONPATH}" exec "$py" -m hqlib "$@"

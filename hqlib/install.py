@@ -60,7 +60,11 @@ def _register(root: Path) -> bool:
         return False
     text = CONFIG_PATH.read_text(encoding="utf-8") if CONFIG_PATH.exists() else "wip_limit = 3\n"
     sep = "" if text.endswith("\n") else "\n"
-    write_text(CONFIG_PATH, f'{text}{sep}\n[[projects]]\npath = "{root}"\n')
+    # TOML basic strings treat backslashes as escapes.  Forward slashes are
+    # accepted by Windows APIs and keep the generated config valid on every
+    # platform.
+    path = str(root).replace("\\", "/")
+    write_text(CONFIG_PATH, f'{text}{sep}\n[[projects]]\npath = "{path}"\n')
     return True
 
 
@@ -154,11 +158,15 @@ def doctor() -> list:
         for label, hp in (("Claude", root / ".claude" / "settings.json"), ("Codex", root / ".codex" / "hooks.json")):
             ok = hp.exists() and _has_gate(read_json(hp, {}) or {})
             rows.append((ok, f"{tag}: {label} Stop 闸门{'已安装' if ok else '未安装'}"))
-    # launchd 起的进程受 TCC 限制读不了 ~/Desktop，所以早晚报走 Claude App 的定时任务
-    tasks = Path.home() / ".claude" / "scheduled-tasks"
-    for tid, label in (("hq-morning-brief", "早报"), ("hq-evening-brief", "晚报")):
-        ok = (tasks / tid / "SKILL.md").exists()
-        rows.append((ok, f"定时{label}（Claude App 定时任务 {tid}）{'已创建' if ok else '缺失'}"))
+    # macOS uses Claude App tasks.  Windows has no launchd equivalent; the
+    # same `hq scheduled` entry point can be registered in Task Scheduler.
+    if os.name == "nt":
+        rows.append((True, "定时任务：Windows 请在任务计划程序中调用 `hq scheduled`"))
+    else:
+        tasks = Path.home() / ".claude" / "scheduled-tasks"
+        for tid, label in (("hq-morning-brief", "早报"), ("hq-evening-brief", "晚报")):
+            ok = (tasks / tid / "SKILL.md").exists()
+            rows.append((ok, f"定时{label}（Claude App 定时任务 {tid}）{'已创建' if ok else '缺失'}"))
     tokei = Path.home() / ".tokei" / "usage.30s.py"
     has = tokei.exists() and "hq_status" in tokei.read_text(encoding="utf-8", errors="ignore")
     rows.append((has, f"tokei 采集脚本{'已支持' if has else '尚未支持'}项目状态"))

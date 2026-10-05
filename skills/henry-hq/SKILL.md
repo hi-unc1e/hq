@@ -11,8 +11,8 @@ Use this skill when a project contains `STATUS.md`, `ACCEPTANCE.md`, and
 ## Start and finish
 
 1. Read the project's `STATUS.md`, `DECISIONS.md`, and `ACCEPTANCE.md`.
-2. Make the requested change and run the focused checks.
-3. Run `hq verify --tier quick` (or the project's documented full checks).
+2. **Prioritize the 20% core (MVP)**: Do not waste hours refining endless algorithms or secondary features. Deliver working core skeletons first. Make the requested change and run the focused checks.
+3. Run `hq verify --tier quick` (or the project's documented full checks) to prove it works before you stop.
 4. Update `STATUS.md` with the result, machine-verifiable evidence, blockers,
    and next steps. Do not hand-edit the generated machine section.
 

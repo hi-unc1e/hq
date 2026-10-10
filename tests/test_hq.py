@@ -305,16 +305,16 @@ class Hooks(unittest.TestCase):
 
 class AutoDefault(unittest.TestCase):
     MESSAGE = (
-        "请选择？\n- A. 保持当前方案\n- B. 采用较简单的实现（最推荐）\n"
-        "<!-- hq-auto-default: {\"eligible\":true,\"choice\":\"B\"} -->"
+        "请选择？\n- A. 保持当前方案\n- B. 采用较简单的实现（最推荐）"
     )
 
     def test_parse_requires_one_explicit_recommended_option(self):
         self.assertEqual(autodefault.parse_default(self.MESSAGE), {
             "label": "B", "choice": "采用较简单的实现"})
         self.assertIsNone(autodefault.parse_default(self.MESSAGE.replace("最推荐", "推荐")))
-        self.assertIsNone(autodefault.parse_default(self.MESSAGE.replace('"choice":"B"', '"choice":"A"')))
-        self.assertIsNone(autodefault.parse_default(self.MESSAGE + "\n引用标记不可触发"))
+        self.assertIsNone(autodefault.parse_default(
+            self.MESSAGE.replace("A. 保持当前方案", "A. 保持当前方案（最推荐）")))
+        self.assertIsNone(autodefault.parse_default("A. 一\nB. 二（最推荐）"))
 
     def test_risky_option_is_never_eligible(self):
         text = self.MESSAGE.replace("采用较简单的实现", "部署到生产环境")

@@ -1,9 +1,9 @@
-"""Codex Stop hook support for applying a safe recommended option after a timeout.
+"""Codex Stop hook for safe recommended options, with a five-minute timeout.
 
-The hook only arms when the assistant emits the explicit machine-readable marker
-and the matching visible A/B/C option is uniquely labelled 最推荐. It observes
-the append-only session transcript while Stop is running so a new user message
-cancels the default. On timeout, Stop returns a continuation prompt.
+The hook detects an A/B/C question and its unique visible 最推荐 option directly
+from the assistant message. It observes the session transcript while Stop is
+running so a new user message cancels the default. On timeout, Stop returns a
+continuation prompt.
 """
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from pathlib import Path
 WAIT_SECONDS = 300
 POLL_SECONDS = 0.5
 STATE_DIR = Path.home() / ".codex" / "hq-auto-default"
-MARKER_RE = re.compile(r"<!--\s*hq-auto-default:\s*(\{.*?\})\s*-->", re.DOTALL)
 OPTION_RE = re.compile(r"^\s*(?:[-*]\s*)?([A-C])[.)、:：]\s*(.+?)\s*$", re.MULTILINE)
 RISK_RE = re.compile(
     r"删除|覆写|覆盖|发布|推送|部署|生产|付款|付费|购买|发送|外发|对外|外部|邮件|短信|密码|凭据|密钥|令牌|权限|安全设置|授权|不可逆|破坏性|"
@@ -27,34 +26,23 @@ RISK_RE = re.compile(
 
 
 def parse_default(message: str | None) -> dict | None:
-    """Return the recommended option only for an explicit, safe question marker."""
+    """Detect a single safe recommendation from an assistant A/B/C question."""
     if not message:
         return None
-    markers = list(MARKER_RE.finditer(message))
-    if len(markers) != 1 or message[markers[0].end():].strip():
+    if "?" not in message and "？" not in message:
         return None
-    try:
-        meta = json.loads(markers[0].group(1))
-    except (TypeError, json.JSONDecodeError):
+    matches = list(OPTION_RE.finditer(message))
+    options = {m.group(1): m.group(2).strip() for m in matches}
+    if len(options) < 2 or len(options) != len(matches):
         return None
-    if not isinstance(meta, dict):
+    recommended = [m for m in matches if "最推荐" in m.group(2)]
+    if len(recommended) != 1:
         return None
-    if meta.get("eligible") is not True or meta.get("choice") not in {"A", "B", "C"}:
+    label = recommended[0].group(1)
+    choice = re.sub(r"\s*[（(]?最推荐[）)]?\s*$", "", options[label]).strip()
+    if not choice or RISK_RE.search(message):
         return None
-
-    visible = MARKER_RE.sub("", message)
-    if "?" not in visible and "？" not in visible:
-        return None
-    options = {m.group(1): m.group(2).strip() for m in OPTION_RE.finditer(visible)}
-    if len(options) < 2 or meta["choice"] not in options:
-        return None
-    recommended = [m.group(1) for m in OPTION_RE.finditer(visible) if "最推荐" in m.group(2)]
-    if recommended != [meta["choice"]]:
-        return None
-    choice = re.sub(r"\s*[（(]?最推荐[）)]?\s*$", "", options[meta["choice"]]).strip()
-    if not choice or RISK_RE.search(choice):
-        return None
-    return {"label": meta["choice"], "choice": choice}
+    return {"label": label, "choice": choice}
 
 
 def _has_new_user_message(path: Path, offset: int) -> bool | None:
@@ -167,7 +155,7 @@ def evaluate(payload: dict, *, wait_seconds: float | None = None,
         reason = (
             "[HQ_AUTO_DEFAULT_TIMEOUT] 用户在问题送达后五分钟内没有回复；"
             f"自动采用最推荐选项 {selected['label']}：{selected['choice']}。"
-            "这是已标记的可逆低风险选择。请继续当前任务并记录该默认选择；"
+        "这是通过 hook 格式与风险检查的可逆低风险选择。请继续当前任务并记录该默认选择；"
             "如果执行时发现它需要删除或覆盖数据、发布/外发、付费、生产部署、"
             "修改安全/权限、使用凭据或扩大授权范围，立即停止并请求明确授权。"
         )

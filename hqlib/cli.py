@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import brief, gate, install
+from . import autodefault, brief, gate, install
 from .common import STATUS_FILE, find_project_root, load_config
 from .fingerprint import code_fingerprint
 from .status import parse_status
@@ -307,6 +307,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("gate", help="Stop hook 入口（stdin 读 hook JSON）")
     s.set_defaults(func=lambda a: gate.main())
+
+    s = sub.add_parser("auto-default", help=argparse.SUPPRESS)
+    s.set_defaults(func=lambda a: autodefault.main())
 
     s = sub.add_parser("status", help="一行一个项目的现状")
     s.add_argument("--json", action="store_true")

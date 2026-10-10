@@ -4,13 +4,14 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from hqlib import gate, install, status  # noqa: E402
+from hqlib import autodefault, gate, install, status  # noqa: E402
 from hqlib.fingerprint import code_fingerprint  # noqa: E402
 from hqlib.verify import load_verify, run_verify  # noqa: E402
 
@@ -283,6 +284,100 @@ class Hooks(unittest.TestCase):
             self.assertEqual(cfg["permissions"]["allow"], ["Bash(ls)"])
             self.assertEqual(len(cfg["hooks"]["Stop"]), 2)
             self.assertEqual(cfg["hooks"]["Stop"][1]["hooks"][0]["command"], "hq gate")
+
+    def test_install_global_codex_auto_default_hook_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            old = install.CODEX_HOOKS
+            install.CODEX_HOOKS = Path(d) / "hooks.json"
+            try:
+                install.CODEX_HOOKS.write_text(json.dumps({"hooks": {"PostToolUse": []}}))
+                self.assertTrue(install.install_global_codex_hook())
+                self.assertFalse(install.install_global_codex_hook())
+                cfg = json.loads(install.CODEX_HOOKS.read_text())
+            finally:
+                install.CODEX_HOOKS = old
+        self.assertEqual(cfg["hooks"]["PostToolUse"], [])
+        hook = cfg["hooks"]["Stop"][0]["hooks"][0]
+        self.assertEqual(hook["command"], "hq auto-default")
+        self.assertEqual(hook["timeout"], 330)
+        self.assertEqual(cfg["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"], "hq auto-default")
+
+
+class AutoDefault(unittest.TestCase):
+    MESSAGE = (
+        "请选择？\n- A. 保持当前方案\n- B. 采用较简单的实现（最推荐）\n"
+        "<!-- hq-auto-default: {\"eligible\":true,\"choice\":\"B\"} -->"
+    )
+
+    def test_parse_requires_one_explicit_recommended_option(self):
+        self.assertEqual(autodefault.parse_default(self.MESSAGE), {
+            "label": "B", "choice": "采用较简单的实现"})
+        self.assertIsNone(autodefault.parse_default(self.MESSAGE.replace("最推荐", "推荐")))
+        self.assertIsNone(autodefault.parse_default(self.MESSAGE.replace('"choice":"B"', '"choice":"A"')))
+        self.assertIsNone(autodefault.parse_default(self.MESSAGE + "\n引用标记不可触发"))
+
+    def test_risky_option_is_never_eligible(self):
+        text = self.MESSAGE.replace("采用较简单的实现", "部署到生产环境")
+        self.assertIsNone(autodefault.parse_default(text))
+
+    def test_stop_timeout_returns_continuation_prompt(self):
+        with tempfile.TemporaryDirectory() as d:
+            transcript = Path(d) / "session.jsonl"
+            transcript.write_text('{"type":"event_msg","payload":{"type":"AgentMessage"}}\n')
+            old_dir = autodefault.STATE_DIR
+            autodefault.STATE_DIR = Path(d) / "state"
+            try:
+                result = autodefault.evaluate({
+                    "hook_event_name": "Stop", "session_id": "s1", "turn_id": "t1",
+                    "last_assistant_message": self.MESSAGE,
+                    "transcript_path": str(transcript),
+                }, wait_seconds=0, poll_seconds=0.01)
+            finally:
+                autodefault.STATE_DIR = old_dir
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("五分钟内没有回复", result["reason"])
+        self.assertIn("采用最推荐选项 B", result["reason"])
+
+    def test_user_reply_cancels_timer(self):
+        with tempfile.TemporaryDirectory() as d:
+            transcript = Path(d) / "session.jsonl"
+            transcript.write_text('{"type":"event_msg","payload":{"type":"AgentMessage"}}\n')
+            old_dir = autodefault.STATE_DIR
+            autodefault.STATE_DIR = Path(d) / "state"
+            result = []
+            def run():
+                result.append(autodefault.evaluate({
+                    "hook_event_name": "Stop", "session_id": "s2", "turn_id": "t2",
+                    "last_assistant_message": self.MESSAGE,
+                    "transcript_path": str(transcript),
+                }, wait_seconds=0.4, poll_seconds=0.01))
+            try:
+                worker = threading.Thread(target=run)
+                worker.start()
+                time.sleep(0.05)
+                with transcript.open("a") as fh:
+                    fh.write(json.dumps({"type": "event_msg", "payload": {
+                        "type": "item_completed", "item": {"type": "UserMessage"}}}) + "\n")
+                worker.join(timeout=1)
+            finally:
+                autodefault.STATE_DIR = old_dir
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(result, [{}])
+
+    def test_user_prompt_hook_marks_active_timer_cancelled(self):
+        with tempfile.TemporaryDirectory() as d:
+            old_dir = autodefault.STATE_DIR
+            autodefault.STATE_DIR = Path(d)
+            try:
+                lock = autodefault.STATE_DIR / "session-42.lock"
+                lock.touch()
+                self.assertEqual(autodefault.evaluate({
+                    "hook_event_name": "UserPromptSubmit", "session_id": "session",
+                    "prompt": "按推荐选项 A 执行",
+                }), {})
+                self.assertTrue(lock.with_suffix(".cancel").exists())
+            finally:
+                autodefault.STATE_DIR = old_dir
 
 
 class Init(unittest.TestCase):

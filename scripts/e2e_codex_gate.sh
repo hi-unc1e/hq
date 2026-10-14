@@ -10,7 +10,7 @@ cd "$T"
 git init -q && git config user.email e2e@hq && git config user.name e2e
 printf 'def add(a, b):\n    return a + b\n' > app.py
 printf '# e2e\n```hq-checks\nquick unit python3 -c "import app; assert app.add(2, 3) == 5"\n```\n' > ACCEPTANCE.md
-sed -e 's/{name}/e2e/g; s/{theme}/测试/; s/{value}/学习/; s/{updated}/2026-01-01 00:00/' "$HQ_HOME/protocol/STATUS.template.md" > STATUS.md
+sed -e 's/{name}/e2e/g; s/{theme}/测试/; s/{updated}/2026-01-01 00:00/' "$HQ_HOME/protocol/STATUS.template.md" > STATUS.md
 printf '.hq/\n' > .gitignore
 PYTHONPATH="$HQ_HOME" python3 -c "
 from pathlib import Path; from hqlib import install

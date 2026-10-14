@@ -55,6 +55,7 @@ def parse_status(path: Path) -> dict | None:
         return None
     text = path.read_text(encoding="utf-8")
     meta, body = split_front_matter(text)
+    meta.pop("value", None)  # 旧项目里的遗留字段也不向视图传播
     body_wo_machine = _strip_verify_block(body)
     summary = ""
     sections = {v: [] for v in SECTION_KEYS.values()}
@@ -92,7 +93,6 @@ def parse_status(path: Path) -> dict | None:
         "meta": meta,
         "name": meta.get("project") or path.parent.name,
         "theme": meta.get("theme", ""),
-        "value": meta.get("value", ""),
         "state": meta.get("state", "active"),
         "updated": meta.get("updated", ""),
         "summary": summary,

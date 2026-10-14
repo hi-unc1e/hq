@@ -131,7 +131,7 @@ def cmd_brief(args) -> int:
 
 
 def cmd_init(args) -> int:
-    for line in install.init_project(args.path, args.name, args.theme, args.value, hooks=not args.no_hooks):
+    for line in install.init_project(args.path, args.name, args.theme, hooks=not args.no_hooks):
         print("•", line)
     return 0
 
@@ -359,7 +359,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("path")
     s.add_argument("--name")
     s.add_argument("--theme", default="未分类")
-    s.add_argument("--value", default="好玩", help="收入 / 学习 / 好玩 / 自用 / 研究")
     s.add_argument("--no-hooks", action="store_true")
     s.set_defaults(func=cmd_init)
 

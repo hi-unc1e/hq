@@ -113,7 +113,7 @@ def render(rows: list, tokei: list, cfg: dict, slot: str) -> str:
         if not st or not (st["needs_you"] or st["answered"]):
             continue
         any_you = True
-        L.append(f"### {st['name']}（{st['theme']} · {st['value']}） {_link(Path(st['path']))}")
+        L.append(f"### {st['name']}（{st['theme']}） {_link(Path(st['path']))}")
         if st["summary"]:
             L.append(f"_{st['summary']}_")
         L += [f"- [ ] {i['text'].split(' — ')[0]}" for i in st["needs_you"]]
@@ -148,16 +148,16 @@ def render(rows: list, tokei: list, cfg: dict, slot: str) -> str:
         L += ["## 🔴 需要留意", ""] + alerts + [""]
 
     L += ["## 🗂 组合视图", "",
-          "| 项目 | 主题 | 价值 | 状态 | ❓ | ⛔ | 机器验收 | 最近活跃 | 累计花费 |",
-          "|---|---|---|---|---|---|---|---|---|"]
+          "| 项目 | 主题 | 状态 | ❓ | ⛔ | 机器验收 | 最近活跃 | 累计花费 |",
+          "|---|---|---|---|---|---|---|---|"]
     for r in rows:
         st, v, t = r["status"], r["verify"], r["tokei"]
         if not st:
-            L.append(f"| {r['root'].name} | – | – | 未接入 | | | | {t.get('last_active', '')} | |")
+            L.append(f"| {r['root'].name} | – | 未接入 | | | | {t.get('last_active', '')} | |")
             continue
         vv = f"{v['passed']}/{v['total']}" + (" ⚠" if v["stale"] or v["failed"] else "")
         cost = f"${t['cost']:.0f}" if t.get("cost") else ""
-        L.append(f"| {st['name']} | {st['theme']} | {st['value']} | {st['state']} | {len(st['needs_you'])} | "
+        L.append(f"| {st['name']} | {st['theme']} | {st['state']} | {len(st['needs_you'])} | "
                  f"{len(st['blocked'])} | {vv} | {t.get('last_active', '')} | {cost} |")
     L.append("")
 
@@ -165,7 +165,7 @@ def render(rows: list, tokei: list, cfg: dict, slot: str) -> str:
     new = unregistered(tokei, registered)
     if new:
         L += ["## 🆕 近 7 天活跃但未接入", "",
-              "接入：`hq init <路径> --theme … --value …`；不打算管就忽略。", ""]
+              "接入：`hq init <路径> --theme …`；不打算管就忽略。", ""]
         L += [f"- {t['name']} — ${t.get('cost', 0):.0f} · {t.get('sessions')} 会话 · {t.get('last_active')} · `{t['path']}`"
               for t in new]
         L.append("")

@@ -92,7 +92,7 @@ def _draw_detail(scr, rid: str, width: int):
     head = f" ❓ {d['id']} · {d['text'].split(' — ')[0].split('。')[0][:40]}"
     lines.append((head + f"   [{d['state']}]", curses.A_BOLD))
     if d["project"]:
-        lines.append((f"   {d['project']}（{d['theme']} · {d['value']}）"
+        lines.append((f"   {d['project']}（{d['theme']}）"
                       f" · 更新 {d['updated']}", curses.A_DIM))
     if d["summary"]:
         lines.append((f"   现状: {d['summary']}", curses.A_DIM))

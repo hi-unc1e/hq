@@ -128,7 +128,7 @@ def _render_template(template: str, **kw) -> str:
     return text
 
 
-def init_project(path, name=None, theme="未分类", value="好玩", hooks=True) -> list:
+def init_project(path, name=None, theme="未分类", hooks=True) -> list:
     root = Path(path).expanduser().resolve()
     if not root.is_dir():
         raise SystemExit(f"目录不存在: {root}")
@@ -140,7 +140,7 @@ def init_project(path, name=None, theme="未分类", value="好玩", hooks=True)
         if target.exists():
             done.append(f"保留已有 {fname}")
             continue
-        write_text(target, _render_template(tpl, name=name, theme=theme, value=value, updated=now_str()))
+        write_text(target, _render_template(tpl, name=name, theme=theme, updated=now_str()))
         done.append(f"创建 {fname}")
     if _ensure_gitignore(root):
         done.append("在 .gitignore 加入 .hq/")

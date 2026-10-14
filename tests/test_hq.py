@@ -19,7 +19,6 @@ STATUS = """---
 hq: 1
 project: demo
 theme: 游戏
-value: 好玩
 state: active
 updated: 2026-09-26 09:00
 ---
@@ -59,6 +58,14 @@ def git(root, *args):
 
 
 class StatusParsing(unittest.TestCase):
+    def test_legacy_value_is_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "STATUS.md"
+            p.write_text(STATUS.replace("theme: 游戏", "theme: 游戏\nvalue: legacy"), encoding="utf-8")
+            st = status.parse_status(p)
+        self.assertNotIn("value", st)
+        self.assertNotIn("value", st["meta"])
+
     def test_sections_and_counts(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "STATUS.md"
@@ -390,7 +397,7 @@ class Init(unittest.TestCase):
             old = install.CONFIG_PATH
             install.CONFIG_PATH = cfg
             try:
-                install.init_project(root, name="proj", theme="游戏", value="好玩")
+                install.init_project(root, name="proj", theme="游戏")
                 again = install.init_project(root, name="proj")
             finally:
                 install.CONFIG_PATH = old
@@ -600,7 +607,7 @@ class BriefSync(unittest.TestCase):
             try:
                 # 简报视图：Typora 里勾了第 1 条并写意见；第 3 条纯通过；第 2 条留空
                 (d / "latest.md").write_text(
-                    "### aaa（游戏 · 好玩）\n"
+                    "### aaa（游戏）\n"
                     "- [x] **真机试听鸭叫**——太轻一点\n"
                     "- [ ] 已看过的截图\n"          # 未勾选 → 忽略
                     "- [x] **不存在的条目**\n",     # 对不上 → 如实跳过
@@ -755,7 +762,7 @@ class BriefAutoSync(unittest.TestCase):
             cfg.write_text(f'[[projects]]\npath = "{aaa}"\n', encoding="utf-8")
             # 旧简报：勾了第 1 条并带意见
             (d / "latest.md").write_text(
-                "### aaa（游戏 · 好玩）\n- [x] **真机试听鸭叫**——太轻一点\n",
+                "### aaa（游戏）\n- [x] **真机试听鸭叫**——太轻一点\n",
                 encoding="utf-8")
             old, oldcwd, olddir = common.CONFIG_PATH, Path.cwd(), brief.BRIEFS_DIR
             common.CONFIG_PATH = cfg

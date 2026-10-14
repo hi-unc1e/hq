@@ -107,7 +107,6 @@ def item_detail(item_id: str) -> dict:
         "line_no": i + 1,
         "project": st.get("name", ""),
         "theme": st.get("theme", ""),
-        "value": st.get("value", ""),
         "summary": st.get("summary", ""),
         "updated": st.get("updated", ""),
     }
@@ -135,7 +134,7 @@ def render_detail(d: dict) -> str:
     segs = text.split(" — ")
     out = [f"❓ {d['id']} · {segs[0].strip()}   [{d['state']}]"]
     ctx = " · ".join(x for x in (
-        f"{d['project']}（{d['theme']} · {d['value']}）" if d["project"] else "",
+        f"{d['project']}（{d['theme']}）" if d["project"] else "",
         f"更新 {d['updated']}" if d["updated"] else "") if x)
     if ctx:
         out.append(f"   {ctx}")

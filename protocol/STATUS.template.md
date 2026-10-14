@@ -2,7 +2,6 @@
 hq: 1
 project: {name}
 theme: {theme}
-value: {value}
 state: active
 updated: {updated}
 ---

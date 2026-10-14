@@ -45,7 +45,7 @@ agent 试图结束时强制自证——quick 检查不过或 STATUS 没更新，
 ### 接入一个项目
 
 ```console
-$ hq init ~/code/demo-api --name demo-api --theme 工具 --value 自用
+$ hq init ~/code/demo-api --name demo-api --theme 工具
 • 创建 STATUS.md
 • 创建 ACCEPTANCE.md
 • 创建 DECISIONS.md
@@ -75,7 +75,7 @@ $ cd ~/code/demo-api && hq todo
 ```console
 $ hq todo 1
 ❓ demo-api#1 · 错误响应要不要带 request_id   [待答]
-   demo-api（工具 · 自用） · 更新 2026-09-27 10:00
+   demo-api（工具） · 更新 2026-09-27 10:00
    现状: v0.3 缓存层上线，P95 从 810ms 降到 240ms；404 页面还没做。
 
    怎么验：看一眼 v0.3 的错误示例，判断排障时是否真用得上

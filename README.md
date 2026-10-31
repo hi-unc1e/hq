@@ -131,6 +131,11 @@ weather-widget active  ❓1 ⛔0 ✅1/2  雨天动画偶发掉帧，待复验。
 
 ## 安装
 
+Codex / Qoder / ZCode 的**五分钟超时自动决策**安装与验收见
+[AUTO_DEFAULT.md](AUTO_DEFAULT.md)。在仓库中执行
+`python3 bin/hq.py install-auto-default`，再用
+`python3 bin/hq.py install-auto-default --check` 核对三家配置。
+
 ```bash
 git clone https://github.com/hi-unc1e/hq && cd hq
 cp hq.toml.example hq.toml   # 登记你自己的项目（个人数据，已被 .gitignore 排除）

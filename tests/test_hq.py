@@ -305,9 +305,9 @@ class Hooks(unittest.TestCase):
                 install.CODEX_HOOKS = old
         self.assertEqual(cfg["hooks"]["PostToolUse"], [])
         hook = cfg["hooks"]["Stop"][0]["hooks"][0]
-        self.assertEqual(hook["command"], "hq auto-default")
+        self.assertIn("auto-default --agent codex", hook["command"])
         self.assertEqual(hook["timeout"], 330)
-        self.assertEqual(cfg["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"], "hq auto-default")
+        self.assertEqual(cfg["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"], hook["command"])
 
 
 class AutoDefault(unittest.TestCase):

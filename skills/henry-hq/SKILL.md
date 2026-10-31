@@ -5,6 +5,15 @@ description: Use the henry-hq project protocol to inspect STATUS, answer pending
 
 # henry-hq
 
+For timeout decisions, install the local hooks with
+`python3 bin/hq.py install-auto-default` from the hq repository (Windows:
+`python bin/hq.py install-auto-default`). Supports Codex, Qoder and ZCode.
+Use `--check` to verify installation. Only explicit A/B/C questions with one
+option marked `最推荐` qualify; never default risky actions or approvals.
+After five minutes the hook asks the agent to continue. A user reply cancels.
+The client must actually dispatch the hooks; skill installation alone does
+not install hooks or prove runtime behavior.
+
 Use this skill when a project contains `STATUS.md`, `ACCEPTANCE.md`, and
 `DECISIONS.md` managed by henry-hq.
 

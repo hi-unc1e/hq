@@ -1,4 +1,4 @@
-"""Codex Stop hook for safe recommended options, with a five-minute timeout.
+"""Stop hook for recommended options in Codex, Qoder and ZCode.
 
 The hook detects an A/B/C question and its unique visible 最推荐 option directly
 from the assistant message. It observes the session transcript while Stop is
@@ -8,6 +8,7 @@ continuation prompt.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sys
@@ -49,17 +50,31 @@ def _has_new_user_message(path: Path, offset: int) -> bool | None:
     """Read only bytes appended since the question was emitted."""
     try:
         with path.open("rb") as fh:
+            if os.fstat(fh.fileno()).st_size < offset:
+                return None
             fh.seek(offset)
             for raw in fh:
                 try:
                     row = json.loads(raw)
                 except (UnicodeDecodeError, json.JSONDecodeError):
-                    continue
+                    return None
+                if not isinstance(row, dict):
+                    return None
                 payload = row.get("payload", {})
                 item = payload.get("item", {}) if isinstance(payload, dict) else {}
                 if item.get("type") == "UserMessage":
                     return True
-                if row.get("type") == "UserMessage":
+                if row.get("type") in ("UserMessage", "user", "human"):
+                    return True
+                if row.get("role") in ("user", "human"):
+                    return True
+                if isinstance(payload, dict) and (
+                    payload.get("type") in ("user_message", "UserMessage")
+                    or payload.get("role") in ("user", "human")
+                ):
+                    return True
+                message = row.get("message", {})
+                if isinstance(message, dict) and message.get("role") in ("user", "human"):
                     return True
     except OSError:
         # Unknown transcript state must never be treated as user silence.
@@ -78,7 +93,9 @@ def _log(event: str, sid: str, detail: str = "") -> None:
 
 def cancel_pending(payload: dict) -> None:
     """UserPromptSubmit callback: mark an active timer as answered/cancelled."""
-    sid = str(payload.get("session_id") or "unknown")
+    sid = str(payload.get("session_id") or "")
+    if not sid:
+        return
     prefix = re.sub(r"[^A-Za-z0-9_.-]", "_", sid) + "-"
     try:
         for lock in STATE_DIR.glob(prefix + "*.lock"):
@@ -98,7 +115,15 @@ def evaluate(payload: dict, *, wait_seconds: float | None = None,
     production duration is fixed at five minutes and cannot be changed by model
     output or environment variables.
     """
-    if payload.get("hook_event_name") == "UserPromptSubmit":
+    # ZCode supplies both spellings; normalize defensively for older clients.
+    payload = dict(payload)
+    for snake, camel in (("session_id", "sessionId"), ("hook_event_name", "hookEventName"),
+                         ("last_assistant_message", "lastAssistantMessage"),
+                         ("transcript_path", "transcriptPath"),
+                         ("stop_hook_active", "stopHookActive")):
+        if snake not in payload and camel in payload:
+            payload[snake] = payload[camel]
+    if payload.get("hook_event_name") in ("UserPromptSubmit", "Interrupt", "SessionEnd"):
         cancel_pending(payload)
         return {}
     if payload.get("hook_event_name") not in (None, "Stop"):
@@ -117,12 +142,19 @@ def evaluate(payload: dict, *, wait_seconds: float | None = None,
     except OSError:
         return {}
 
-    sid = str(payload.get("session_id") or "unknown")
-    turn_id = str(payload.get("turn_id") or "turn")
+    sid = str(payload.get("session_id") or "")
+    if not sid:
+        return {}
+    question_hash = hashlib.sha256(payload["last_assistant_message"].encode()).hexdigest()[:16]
+    turn_id = str(payload.get("turn_id") or payload.get("request_set_id") or question_hash)
     # Duplicate global + project hooks can arrive together. Only one owns the
     # timer and continuation for this thread/turn.
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     lock = STATE_DIR / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', sid)}-{re.sub(r'[^A-Za-z0-9_.-]', '_', turn_id)}.lock"
+    # A repeated Stop callback must not apply the same default twice.
+    done = lock.with_suffix(".done")
+    if done.exists():
+        return {}
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
@@ -135,12 +167,14 @@ def evaluate(payload: dict, *, wait_seconds: float | None = None,
     try:
         os.write(fd, f"{os.getpid()}\n".encode())
         os.close(fd)
+        fd = -1
         cancel_file = lock.with_suffix(".cancel")
         deadline = time.monotonic() + duration
         while True:
             # A reply wins even at the timeout boundary.
             new_user_message = _has_new_user_message(transcript_path, offset)
             if cancel_file.exists() or new_user_message is True:
+                done.touch()
                 _log("cancelled:user-reply", sid, turn_id)
                 return {}
             if new_user_message is None:
@@ -151,18 +185,20 @@ def evaluate(payload: dict, *, wait_seconds: float | None = None,
                 break
             time.sleep(min(interval, remaining))
 
+        done.touch()
         _log("expired:apply-default", sid, selected["label"])
         reason = (
             "[HQ_AUTO_DEFAULT_TIMEOUT] 用户在问题送达后五分钟内没有回复；"
             f"自动采用最推荐选项 {selected['label']}：{selected['choice']}。"
-        "这是通过 hook 格式与风险检查的可逆低风险选择。请继续当前任务并记录该默认选择；"
+            "这是通过 hook 格式与风险检查的可逆低风险选择。请继续当前任务并记录该默认选择；"
             "如果执行时发现它需要删除或覆盖数据、发布/外发、付费、生产部署、"
             "修改安全/权限、使用凭据或扩大授权范围，立即停止并请求明确授权。"
         )
         return {"decision": "block", "reason": reason}
     finally:
         try:
-            os.close(fd)
+            if fd >= 0:
+                os.close(fd)
         except OSError:
             pass
         try:
@@ -175,7 +211,10 @@ def evaluate(payload: dict, *, wait_seconds: float | None = None,
             pass
 
 
-def main(stdin=None) -> int:
+def main(stdin=None, *, agent: str = "codex") -> int:
+    global STATE_DIR
+    # Keep legacy Codex state location so old and new installations coordinate.
+    STATE_DIR = Path.home() / f".{agent}" / "hq-auto-default"
     stdin = stdin or sys.stdin
     try:
         raw = stdin.read()

@@ -14,7 +14,6 @@ from .status import parse_checks, parse_status
 # 闸门走 PATH 里的 `hq`（~/Desktop/bin 在 PATH；入口链只动链接不动引用）。
 # 特殊布局可用 HQ_GATE_CMD 覆盖。
 GATE_CMD = os.environ.get("HQ_GATE_CMD", "hq gate")
-AUTO_DEFAULT_CMD = os.environ.get("HQ_AUTO_DEFAULT_CMD", "hq auto-default")
 GATE_TIMEOUT = 330  # 300 秒默认等待 + Codex hook 的退出与调度余量。
 GLOBAL_SOURCE = TASTE_DIR / "global.md"
 GLOBAL_TARGETS = [Path.home() / ".claude" / "CLAUDE.md", Path.home() / ".codex" / "AGENTS.md"]
@@ -47,54 +46,24 @@ def install_hook(settings_path: Path) -> bool:
 
 
 def install_global_codex_hook(dry_run=False) -> bool:
-    """Install the machine-triggered default timer for all local Codex projects."""
+    """Keep sync-global compatible with the standalone hook installer."""
+    from .hookinstall import desired_config
     cfg = read_json(CODEX_HOOKS, {}) if CODEX_HOOKS.exists() else {}
-    if cfg is None:
-        raise ValueError(f"{CODEX_HOOKS} 不是合法 JSON，未改动")
-    changed = False
-
-    def ensure(event: str, *, timeout: int | None = None, status_message: str | None = None):
-        nonlocal changed
-        groups = cfg.setdefault("hooks", {}).setdefault(event, [])
-        for group in groups:
-            for handler in group.get("hooks", []):
-                if handler.get("type") != "command" or not handler.get("command", "").endswith("hq auto-default"):
-                    continue
-                if timeout is not None and int(handler.get("timeout", 0) or 0) < timeout:
-                    handler["timeout"] = timeout
-                    changed = True
-                if status_message is not None and handler.get("statusMessage") != status_message:
-                    handler["statusMessage"] = status_message
-                    changed = True
-                return
-        handler = {"type": "command", "command": AUTO_DEFAULT_CMD}
-        if timeout is not None:
-            handler["timeout"] = timeout
-        if status_message is not None:
-            handler["statusMessage"] = status_message
-        groups.append({"hooks": [handler]})
-        changed = True
-
-    ensure("Stop", timeout=GATE_TIMEOUT, status_message="等待用户选择或五分钟默认值")
-    ensure("UserPromptSubmit")
-    if changed and not dry_run:
-        write_json(CODEX_HOOKS, cfg)
-    return changed
+    if not isinstance(cfg, dict):
+        raise ValueError(f"{CODEX_HOOKS}: expected a JSON object")
+    desired = desired_config(cfg, "codex")
+    if cfg != desired and not dry_run:
+        write_json(CODEX_HOOKS, desired)
+    return cfg != desired
 
 
 def global_codex_hook_installed() -> bool:
+    from .hookinstall import desired_config
     cfg = read_json(CODEX_HOOKS, {}) if CODEX_HOOKS.exists() else {}
-    if not isinstance(cfg, dict):
+    try:
+        return isinstance(cfg, dict) and cfg == desired_config(cfg, "codex")
+    except (ValueError, TypeError, AttributeError):
         return False
-    def has(event: str, min_timeout: int = 0) -> bool:
-        return any(
-            handler.get("type") == "command"
-            and handler.get("command", "").endswith("hq auto-default")
-            and int(handler.get("timeout", 0) or 0) >= min_timeout
-            for group in cfg.get("hooks", {}).get(event, [])
-            for handler in group.get("hooks", [])
-        )
-    return has("Stop", GATE_TIMEOUT) and has("UserPromptSubmit")
 
 
 def _ensure_gitignore(root: Path) -> bool:

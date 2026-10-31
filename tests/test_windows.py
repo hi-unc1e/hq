@@ -28,7 +28,7 @@ class WindowsIntegration(unittest.TestCase):
     def hq(self, *args, cwd=None, input_text=None):
         return subprocess.run(["cmd", "/d", "/c", str(self.launcher), *args],
                               cwd=cwd or self.root, env=self.env, input=input_text,
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, encoding="utf-8", timeout=60)
 
     def test_launcher_and_gate(self):
         help_out = self.hq("--help")
@@ -45,7 +45,7 @@ class WindowsIntegration(unittest.TestCase):
         self.assertEqual(init.returncode, 0, init.stderr)
         self.assertTrue((project / ".claude" / "settings.json").exists())
         config = self.config.read_text(encoding="utf-8")
-        self.assertIn(project.as_posix(), config)
+        self.assertIn(project.resolve().as_posix(), config)
         self.assertNotIn("\\", config)
 
         (project / "ACCEPTANCE.md").write_text(
@@ -59,6 +59,9 @@ class WindowsIntegration(unittest.TestCase):
         argv, kwargs = shell_command("echo hello")
         self.assertEqual(argv[-4:], ["/d", "/s", "/c", "echo hello"])
         self.assertIn("creationflags", kwargs)
+
+    def test_launcher_propagates_errors(self):
+        self.assertNotEqual(self.hq("unknown-command").returncode, 0)
 
 
 if __name__ == "__main__":

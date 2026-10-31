@@ -252,7 +252,7 @@ def cmd_mine(args) -> int:
 
 
 _HUMAN_CMDS = ["status", "todo", "ok", "note", "brief"]
-_MACHINE_CMDS = ["verify", "gate", "init", "sync-global", "doctor", "mine",
+_MACHINE_CMDS = ["verify", "gate", "init", "install-auto-default", "sync-global", "doctor", "mine",
                  "nightly", "scheduled"]
 
 
@@ -309,7 +309,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=lambda a: gate.main())
 
     s = sub.add_parser("auto-default", help=argparse.SUPPRESS)
-    s.set_defaults(func=lambda a: autodefault.main())
+    s.add_argument("--agent", choices=["codex", "qoder", "zcode"], default="codex")
+    s.set_defaults(func=lambda a: autodefault.main(agent=a.agent))
+
+    from . import hookinstall
+    s = sub.add_parser("install-auto-default", help="安装/检查 Codex、Qoder、ZCode 五分钟默认 hook")
+    s.add_argument("--agents", nargs="+", choices=hookinstall.AGENTS, default=list(hookinstall.AGENTS))
+    s.add_argument("--check", action="store_true", help="只检查，不写配置")
+    s.set_defaults(func=hookinstall.run)
 
     s = sub.add_parser("status", help="一行一个项目的现状")
     s.add_argument("--json", action="store_true")
@@ -398,6 +405,10 @@ def _expand_fused(argv: list) -> list:
 
 
 def main(argv=None) -> int:
+    if sys.platform == "win32":
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8")
     raw = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(_expand_fused(raw))
     return args.func(args) or 0

@@ -143,6 +143,15 @@ ln -s "$PWD/bin/hq" ~/bin/hq # 或任何 PATH 目录；需要 Python 3.11+
 hq doctor                    # 自检
 ```
 
+### 效能诊断与跨 Harness 护栏：`hq diagnose` / `hq tune`
+
+```console
+$ hq diagnose            # 审计 Codex CLI / Claude Code / DSH 会话黑洞与文档膨胀
+$ hq tune --apply        # 一键安装跨 Harness 四段式 Hook（含 Stop 去重，不重复跑 hq gate）
+```
+
+同时提供 `henry-better-life` 元技能（`npx skills add hi-unc1e/hq --skill henry-better-life`），固化 P0–P2 工程规范（纠偏即 Lint、80/20 局部靶向录屏 + 盲模态遥测、`STATUS`/`DECISIONS` 领域记忆融合与业务源码去注释化）。
+
 ### ZCode / Agent Skills
 
 仓库内置标准 Agent Skills 布局。ZCode 用户可以直接用 `skills` CLI 安装

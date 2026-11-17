@@ -122,6 +122,46 @@ def _iter_claude(cutoff: float):
             continue
 
 
+def _iter_dsh(cutoff: float):
+    """从 ~/.dsh/sessions/**/session*.jsonl(.zstd) 提取 Henry 的用户消息。"""
+    from .diagnose import read_jsonl_lines
+
+    for f in glob.glob(str(HOME / ".dsh/sessions/**/session*.jsonl*"), recursive=True):
+        p = Path(f)
+        try:
+            if not p.is_file() or p.stat().st_mtime < cutoff:
+                continue
+            records = read_jsonl_lines(p)
+            cwd = ""
+            is_sub = False
+            for r in records:
+                rtype = r.get("type")
+                if rtype == "session":
+                    cwd = r.get("cwd") or ""
+                    if int(r.get("delegationDepth") or 0) > 0 or r.get("origin") == "subagent":
+                        is_sub = True
+                        break
+                    continue
+                if rtype != "user/message":
+                    continue
+                data = r.get("data") or {}
+                msg = data.get("message") or {}
+                src = msg.get("source") or {}
+                if isinstance(src, dict) and src.get("kind") not in (None, "user", "human"):
+                    continue
+                ts_ms = r.get("time") or 0
+                ts_str = datetime.fromtimestamp(ts_ms / 1000).isoformat() if ts_ms else ""
+                for c in msg.get("content") or []:
+                    if isinstance(c, dict) and c.get("type") == "text":
+                        t = _clean(c.get("text"))
+                        if t:
+                            yield {"tool": "dsh", "cwd": cwd, "ts": ts_str, "text": t}
+            if is_sub:
+                continue
+        except (OSError, ValueError):
+            continue
+
+
 def classify(text: str) -> list:
     return [k for k, rx in _CAT_RE.items() if rx.search(text)]
 
@@ -135,7 +175,7 @@ def score(item: dict) -> float:
 def collect(days: int = 120) -> tuple:
     cutoff = time.time() - days * 86400
     seen, items, nudges = set(), [], Counter()
-    for it in list(_iter_codex(cutoff)) + list(_iter_claude(cutoff)):
+    for it in list(_iter_codex(cutoff)) + list(_iter_claude(cutoff)) + list(_iter_dsh(cutoff)):
         text = it["text"]
         key = re.sub(r"\s+", "", text)[:120]
         if NUDGE_RE.match(text.strip()):

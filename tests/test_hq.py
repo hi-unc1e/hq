@@ -862,6 +862,119 @@ class Launcher(unittest.TestCase):
         self.assertEqual(out.returncode, 0)
         self.assertEqual(json.loads(out.stdout), {})
 
+    def test_diagnose_and_tune_project(self):
+        from hqlib import diagnose
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "STATUS.md").write_text(STATUS, encoding="utf-8")
+            (root / "ACCEPTANCE.md").write_text(ACCEPT, encoding="utf-8")
+            sess = root / "session.v4.jsonl"
+            records = [
+                {"type": "session", "id": "session-test-1234", "cwd": str(root), "agentPreset": "standard"},
+                {"type": "tool/call", "data": {"turn": 1, "step": 1, "name": "bash", "toolCallId": "c1", "arguments": json.dumps({"command": "sed -n '1,20p' app.kt"})}},
+                {"type": "tool/call", "data": {"turn": 1, "step": 2, "name": "bash", "toolCallId": "c2", "arguments": json.dumps({"command": "./gradlew testDebugUnitTest"})}},
+                {"type": "tool/call", "data": {"turn": 1, "step": 3, "name": "bash", "toolCallId": "c3", "arguments": json.dumps({"command": "python3 -c 'import xml.etree.ElementTree; ... TEST-foo.xml'"})}},
+            ]
+            sess.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+            summary = diagnose.analyze_dsh_session(sess)
+            self.assertEqual(summary["sessionId"], "session-test-1234")
+            self.assertEqual(summary["bottlenecks"]["shellReadEscapeCount"], 1)
+            self.assertEqual(summary["bottlenecks"]["testRunCount"], 1)
+            self.assertEqual(summary["bottlenecks"]["manualXmlOrLogParseCount"], 1)
+
+            actions = diagnose.tune_project(root, apply=True)
+            self.assertTrue(any("已挂载四段式 Hook" in a for a in actions))
+            self.assertTrue((root / ".hq" / "high_effective_hook.py").is_file())
+            audit = diagnose.audit_project_harness(root)
+            self.assertTrue(audit["checks"]["hqProtocol"])
+            self.assertTrue(audit["checks"]["docMemoryHygiene"])
+            self.assertTrue(audit["checks"]["lifecycleHooks4Stage"])
+
+    def test_diagnose_supports_codex_sessions_doc_bloat_and_cross_harness_hooks(self):
+        from hqlib import diagnose
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "AGENTS.md").write_text("# Demo Agent Rules\n", encoding="utf-8")
+            (root / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+            (root / "STATUS.md").write_text(
+                "---\nhq: 1\nproject: demo\n---\n# demo\n\n"
+                "> [PR #1](https://example.com/very/long/url/that/breaks/one-line-status/view)\n\n"
+                "## ❓\n- [ ] wait\n",
+                encoding="utf-8",
+            )
+            (root / "DECISIONS.md").write_text(
+                "\n".join(f"## D-00{i} 条目" for i in range(1, 10)),
+                encoding="utf-8",
+            )
+            (root / "ACCEPTANCE.md").write_text(ACCEPT, encoding="utf-8")
+            (root / "Justfile").write_text("invariants:\n\t@true\n", encoding="utf-8")
+
+            codex_sess = root / "codex-rollout.jsonl"
+            codex_rows = [
+                {"type": "session_meta", "payload": {"id": "codex-abc12345", "cwd": str(root)}},
+                {"type": "response_item", "payload": {"type": "message", "role": "user", "content": []}},
+                {"type": "response_item", "payload": {"type": "function_call", "name": "exec_command", "call_id": "fc1",
+                                                      "arguments": json.dumps({"cmd": "cat src/App.kt"})}},
+                {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "fc1",
+                                                      "output": "Process exited with code 0"}},
+                {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+                                                      "content": [{"type": "output_text", "text": "已修改，是否继续？"}]}},
+            ]
+            codex_sess.write_text("\n".join(json.dumps(r) for r in codex_rows) + "\n", encoding="utf-8")
+            summary = diagnose.analyze_dsh_session(codex_sess)
+            self.assertEqual(summary["preset"], "codex-cli")
+            self.assertEqual(summary["timidPauseCount"], 1)
+            self.assertEqual(summary["bottlenecks"]["shellReadEscapeCount"], 1)
+
+            audit = diagnose.audit_project_harness(root)
+            self.assertTrue(audit["checks"]["agentsInstructionAligned"])
+            self.assertFalse(audit["checks"]["docMemoryHygiene"])
+            self.assertEqual(len(audit["hygieneNotes"]), 2)
+
+            report = diagnose.render_diagnosis_report(
+                root, [summary], audit, diagnose.generate_prescriptions([summary], audit)
+            )
+            self.assertIn("`codex-cli` | 1轮 / 1步", report)
+
+            # Seed duplicate Stop `hq gate` to confirm tune deduplicates & preserves single gate
+            codex_dir = root / ".codex"
+            codex_dir.mkdir()
+            (codex_dir / "hooks.json").write_text(json.dumps({
+                "hooks": {
+                    "Stop": [
+                        {"hooks": [{"type": "command", "command": "hq gate"}]},
+                        {"hooks": [{"type": "command", "command": "hq gate"}]},
+                    ]
+                }
+            }), encoding="utf-8")
+            diagnose.tune_project(root, apply=True)
+            tuned_codex = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
+            self.assertEqual(tuned_codex["hooks"]["PreToolUse"][0]["matcher"], "Bash|bash|shell|shell_command|exec_command")
+            stop_cmds = [
+                h["command"]
+                for g in tuned_codex["hooks"]["Stop"]
+                for h in g["hooks"]
+            ]
+            self.assertEqual(stop_cmds.count("hq gate"), 1)
+
+            hook_py = root / ".hq" / "high_effective_hook.py"
+            pre_res = subprocess.run(
+                [sys.executable, "-B", str(hook_py), "PreToolUse"],
+                input=json.dumps({"tool_name": "exec_command", "tool_input": {"cmd": ["zsh", "-lc", "cat foo.kt"]}}),
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(json.loads(pre_res.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+            stop_res = subprocess.run(
+                [sys.executable, "-B", str(hook_py), "Stop"],
+                input=json.dumps({"cwd": str(root)}),
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(json.loads(stop_res.stdout), {})
+
 
 if __name__ == "__main__":
     unittest.main()

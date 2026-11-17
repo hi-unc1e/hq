@@ -220,7 +220,7 @@ def _expand_id(item_id: str) -> str:
     proj = answer.current_project()
     if proj is None:
         raise SystemExit(
-            "#N 只在登记项目目录里可用；不在项目里请写全编号，如 hq ok auto-jb-ape#1")
+            "#N 只在登记项目目录里可用；不在项目里请写全编号，如 hq ok demo-api#1")
     return f"{proj}{item_id}"
 
 
@@ -250,8 +250,42 @@ def cmd_mine(args) -> int:
     return 0
 
 
+def cmd_diagnose(args) -> int:
+    from . import diagnose
+    proj_root, session_files = diagnose.resolve_session_files(args.target, days=args.days, limit=args.limit * 2)
+    sessions = [
+        s for f in session_files
+        if (s := diagnose.analyze_dsh_session(f))["totalToolCalls"] > 0
+    ][:args.limit]
+    harness = diagnose.audit_project_harness(proj_root)
+    prescriptions = diagnose.generate_prescriptions(sessions, harness)
+    if args.json:
+        print(json.dumps({
+            "project": harness,
+            "sessions": sessions,
+            "prescriptions": prescriptions,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    print(diagnose.render_diagnosis_report(proj_root, sessions, harness, prescriptions))
+    return 0
 
-_HUMAN_CMDS = ["status", "todo", "ok", "note", "brief"]
+
+def cmd_tune(args) -> int:
+    from . import diagnose
+    target_path = Path(args.path or os.getcwd()).expanduser().resolve()
+    actions = diagnose.tune_project(target_path, apply=args.apply)
+    for line in actions:
+        print("•", line)
+    return 0
+
+
+def cmd_dispatch(args) -> int:
+    # 待实现逻辑：解析 URL，调用 team_task_create 或修改 STATUS.md
+    print(f"DEBUG: Dispatching issue {args.url} (Not implemented)")
+    return 0
+
+
+_HUMAN_CMDS = ["status", "todo", "ok", "note", "brief", "diagnose", "tune", "dispatch"]
 _MACHINE_CMDS = ["verify", "gate", "init", "install-auto-default", "sync-global", "doctor", "mine",
                  "nightly", "scheduled"]
 
@@ -380,6 +414,22 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--days", type=int, default=120)
     s.add_argument("--out")
     s.set_defaults(func=cmd_mine)
+
+    s = sub.add_parser("diagnose", help="诊断会话与项目效能黑洞（bash 逃逸、测试/设备死循环、护栏缺失），开出三层处方")
+    s.add_argument("target", nargs="?", help="项目路径、项目名、会话导出目录或 session-id（默认当前项目）")
+    s.add_argument("--days", type=int, default=14, help="扫描最近 N 天的会话（默认 14）")
+    s.add_argument("--limit", type=int, default=5, help="最多分析最近 N 个非空会话（默认 5）")
+    s.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    s.set_defaults(func=cmd_diagnose)
+
+    s = sub.add_parser("tune", help="为项目一键挂载/检查四段式高效开发 Hook 护栏（与 hq gate 共存）")
+    s.add_argument("path", nargs="?", help="项目目录（默认当前目录）")
+    s.add_argument("--apply", action="store_true", help="实际写入 Hook 脚本与 .claude/.codex 配置")
+    s.set_defaults(func=cmd_tune)
+
+    s = sub.add_parser("dispatch", help="从 Issue URL 派生任务到 STATUS.md 待办")
+    s.add_argument("url")
+    s.set_defaults(func=cmd_dispatch)
     _grouped_help(p, sub)
     return p
 
@@ -400,7 +450,7 @@ def _expand_fused(argv: list) -> list:
     proj = answer.current_project()
     if proj is None:
         raise SystemExit(
-            "ok#N 只在登记项目目录里可用；不在项目里请写全编号，如 hq ok auto-jb-ape#1")
+            "ok#N 只在登记项目目录里可用；不在项目里请写全编号，如 hq ok demo-api#1")
     return [m.group(1), f"{proj}#{m.group(2)}"] + list(argv[1:])
 
 
